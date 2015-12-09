@@ -357,6 +357,15 @@ namespace Lily_Acolasia
         }
 
         /// <summary>
+        /// Add another deck's cards.
+        /// </summary>
+        /// <param name="deck">Other deck.</param>
+        public void AddRange(CardDeck deck)
+        {
+            this.list.AddRange(deck.list);
+        }
+
+        /// <summary>
         /// Shuffle the card.
         /// </summary>
         public void Shuffle()
@@ -413,6 +422,7 @@ namespace Lily_Acolasia
     class Talon
     {
         private CardDeck deck = new CardDeck();
+        private CardDeck trash = new CardDeck();
 
         /// <summary>
         /// Initialize the talon.
@@ -431,12 +441,31 @@ namespace Lily_Acolasia
         }
 
         /// <summary>
+        /// Refresh the talon.
+        /// </summary>
+        public void Refresh()
+        {
+            deck.AddRange(trash);
+            trash.Init();
+            deck.Shuffle();
+        }
+
+        /// <summary>
         /// Draw the card from this talon.
         /// </summary>
         /// <returns>Card instance.</returns>
         public Card Draw()
         {
             return deck.Draw();
+        }
+
+        /// <summary>
+        /// Trash the card.
+        /// </summary>
+        /// <param name="card">Trashed card.</param>
+        public void Trash(Card card)
+        {
+            trash.Add(card);
         }
 
         /// <summary>
@@ -589,12 +618,12 @@ namespace Lily_Acolasia
 
         /// <summary>
         /// Evaluate this field.
-        /// If there are 3 cards in any side, the field will be fixed.
+        /// If there are 3 cards in the both side, the field will be fixed.
         /// </summary>
         /// <returns>-1:Not fixed, 0:Player1 won, 1:Player2 won, 2:Even</returns>
         public int Eval()
         {
-            if (Math.Max(this.cardList[0].Count(), this.cardList[1].Count()) < MAX_DISCARD)
+            if (Math.Min(this.cardList[0].Count(), this.cardList[1].Count()) < MAX_DISCARD)
             {
                 return this.win;
             }
@@ -698,13 +727,15 @@ namespace Lily_Acolasia
         private const int PLAYER_NUM = 2;
         private const int FIELD_NUM = 5;
         private const int INIT_CARD = 5;
+        private const int DISCARD_NUM = 2;
+        private const int TRASHED_NUM = 1;
 
         private readonly Field[] fields = new Field[FIELD_NUM];
         private readonly Player[] players = new Player[PLAYER_NUM];
         private readonly Talon talon;
 
-        private bool trashed;
-        private bool discarded;
+        private int trashed;
+        private int discarded;
         private int turn;
         private int firstTurn;
 
@@ -744,7 +775,6 @@ namespace Lily_Acolasia
                 this.players[0].Add(card1);
                 this.players[1].Add(card2);
             }
-            this.Draw();
         }
 
         /// <summary>
@@ -757,22 +787,20 @@ namespace Lily_Acolasia
                 return;
             }
 
-            if (!this.discarded)
+            if (!this.IsDiscarded)
             {
                 throw GameException.getNotTrashedException();
             }
-            this.discarded = false;
-            this.trashed = false;
+            this.discarded = 0;
+            this.trashed = 0;
 
             turn = (turn + 1) % PLAYER_NUM;
 
-            if (turn == this.firstTurn)
+            foreach (Field field in this.fields)
             {
-                foreach (Field field in this.fields)
-                {
-                    field.Eval();
-                }
+                field.Eval();
             }
+            this.Draw();
             this.Draw();
         }
 
@@ -795,11 +823,11 @@ namespace Lily_Acolasia
         /// <summary>
         /// Discarded flag.
         /// </summary>
-        public bool IsDiscarded { get { return this.discarded; } }
+        public bool IsDiscarded { get { return this.discarded == DISCARD_NUM; } }
         /// <summary>
         /// Trashed flag.
         /// </summary>
-        public bool IsTrashed { get { return this.trashed; } }
+        public bool IsTrashed { get { return this.trashed == TRASHED_NUM; } }
 
         /// <summary>
         /// Winner.
@@ -858,7 +886,7 @@ namespace Lily_Acolasia
         {
             if (this.talon.IsEmpty)
             {
-                return;
+                this.talon.Refresh();
             }
             Card card = this.talon.Draw();
             this.players[this.turn].Add(card);
@@ -872,7 +900,7 @@ namespace Lily_Acolasia
         /// <returns>Discarded card instance.</returns>
         public Card Discard(int fieldIndex, string cardStr)
         {
-            if (this.discarded)
+            if (this.IsDiscarded)
             {
                 throw GameException.getAlreadyDiscardedException();
             }
@@ -890,7 +918,8 @@ namespace Lily_Acolasia
             this.fields[fieldIndex].Add(this.turn, card);
             hand.Remove(cardStr);
 
-            this.discarded = true;
+            this.discarded ++;
+            this.trashed = TRASHED_NUM;
             return card;
         }
 
@@ -902,7 +931,7 @@ namespace Lily_Acolasia
         /// <returns>Trashed card instance.</returns>
         public Card Trash(int fieldIndex, string cardStr)
         {
-            if (this.trashed)
+            if (this.IsTrashed)
             {
                 throw GameException.getAlreadyTrashedException();
             }
@@ -913,8 +942,8 @@ namespace Lily_Acolasia
 
 
             Card card = this.fields[fieldIndex].Remove(this.turn, cardStr);
-
-            this.trashed = true;
+            this.talon.Trash(card);
+            this.trashed ++;
             return card;
         }
 
@@ -1134,33 +1163,39 @@ namespace Lily_Acolasia
             observer.TurnStart(round);
 
             object[] opt = new object[10];
-            int mode;
-            while ((mode = observer.CmdStart(round, opt)) != 3)
+            while (true)
             {
-                if (mode >= 0)
+                int mode = observer.CmdStart(round, opt);
+                try
                 {
-                    try
+                    if (mode < 3)
                     {
-                        string cardStr = (string)opt[0];
-                        int field = (int)opt[1];
                         if (mode == 1)
                         {
+                            string cardStr = (string)opt[0];
+                            int field = (int)opt[1];
                             game.Discard(field, cardStr);
                         }
                         else if (mode == 2)
                         {
+                            string cardStr = (string)opt[0];
+                            int field = (int)opt[1];
                             game.Trash(field, cardStr);
                         }
+                        observer.CmdEnd(round);
                     }
-                    catch (GameException ex)
+                    else if (mode == 3)
                     {
-                        observer.CmdError(round, ex);
+                        observer.TurnEnd(round);
+                        game.nextTurn();
+                        break;
                     }
                 }
-                observer.CmdEnd(round);
+                catch (GameException ex)
+                {
+                    observer.CmdError(round, ex);
+                }
             }
-            game.nextTurn();
-            observer.TurnEnd(round);
         }
     }
 }
