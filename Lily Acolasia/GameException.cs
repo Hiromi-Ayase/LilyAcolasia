@@ -10,19 +10,6 @@ namespace Lily_Acolasia
     /// </summary>
     class GameExceptionType
     {
-        private static readonly Dictionary<string, string> Messages = new Dictionary<string, string>() 
-        {
-            {"FIELD_INDEX_EXCEPTION",  "The field index is out of range."},
-            {"CARD_STRING_EXCEPTION",  "The card representation string {0} is invalid."},
-            {"ALREADY_DISCARDED_EXCEPTION",  "You have already discarded a card."},
-            {"NOT_DISCARDED_EXCEPTION",  "You have not discarded any card yet."},
-            {"ALREADY_TRASHED_EXCEPTION",  "You have already trashed a card."},
-            {"CARD_ALREADY_FIXED_EXCEPTION",  "The card list in the field is already fixed."},
-            {"CARD_NOT_FOUND_EXCEPTION",  "The card {0} is not found."},
-            {"CARD_TOO_MANY_EXCEPTION",  "The number of cards is too many."},
-            {"NO_CARD_EXCEPTION",  "No such card exists."},
-        };
-
         /// <summary>
         /// Field index out of range.
         /// </summary>
@@ -60,15 +47,16 @@ namespace Lily_Acolasia
         /// </summary>
         public const string NO_CARD_EXCEPTION = "NO_CARD_EXCEPTION";
 
-        private readonly string message;
         private readonly string type;
 
         /// <summary>
-        /// Message.
+        /// Type string.
         /// </summary>
-        public string Message { get { return this.message; } }
-
-        public string Type { get { return this.type; } }
+        /// <returns>Type.</returns>
+        public override string ToString()
+        {
+            return this.type;
+        }
 
         /// <summary>
         /// Constructor.
@@ -77,7 +65,6 @@ namespace Lily_Acolasia
         /// <param name="args">Arguments.</param>
         public GameExceptionType(string type, params object[] args)
         {
-            this.message = String.Format(Messages[type], args);
             this.type = type;
         }
     }
@@ -90,11 +77,15 @@ namespace Lily_Acolasia
         private readonly GameExceptionType type;
 
         /// <summary>
+        /// Type.
+        /// </summary>
+        public string Type { get { return this.type.ToString();  } }
+
+        /// <summary>
         /// Constructor.
         /// </summary>
         /// <param name="type">GameExceptionType.</param>
         public GameException(GameExceptionType type)
-            : base(type.Message)
         {
             this.type = type;
         }

@@ -92,6 +92,15 @@ namespace Lily_Acolasia
                     return null;
             }
         }
+
+        /// <summary>
+        /// Get random color.
+        /// </summary>
+        /// <returns>Color instance.</returns>
+        public static Color GetRandom()
+        {
+            return Color.List[GameRandom.Next() % Color.List.Length];
+        }
     }
 
     /// <summary>
@@ -103,6 +112,8 @@ namespace Lily_Acolasia
         private readonly int power;
         private readonly Color color;
         private readonly string name;
+        private readonly bool hasSpecialInput;
+        private readonly bool hasSpecial;
 
         /// <summary>
         /// Card power.
@@ -116,6 +127,14 @@ namespace Lily_Acolasia
         /// Card name.
         /// </summary>
         public string Name { get { return this.name; } }
+        /// <summary>
+        /// Has special input?
+        /// </summary>
+        public bool HasSpecialInput { get { return this.hasSpecialInput; } }
+        /// <summary>
+        /// Has special?
+        /// </summary>
+        public bool HasSpecial { get { return this.hasSpecial; } }
 
         static Card()
         {
@@ -137,16 +156,66 @@ namespace Lily_Acolasia
             this.power = power;
             this.color = color;
             this.name = String.Format("{0}{1}", color.ToString(), power);
+            this.hasSpecialInput = power == 1 || power == 7;
+            this.hasSpecial = power % 2 == 1;
         }
 
         /// <summary>
         /// The special skill of this card.
         /// </summary>
         /// <param name="game">Game instance.</param>
+        /// <param name="opt">Input option parameter.</param>
         /// <returns>Result.</returns>
-        public string Special(CardGame game)
+        public string Special(CardGame game, params object[] opt)
         {
-            throw new NotImplementedException();
+            string ret = "";
+            if (this.power == 1)
+            {
+                Field field = game.Fields[(int)opt[1]];
+                if (field.IsFixed)
+                {
+                    throw GameException.getCardAlreadyFixedException();
+                }
+                string cardStr = (string)opt[0];
+                CardDeck fieldDeck = field.CardList[game.Turn];
+                fieldDeck.Remove(cardStr);
+            }
+            else if (this.power == 3)
+            {
+                int count = game.Player.Hand.Count();
+                foreach (Card card in game.Player.Hand)
+                {
+                    game.Talon.Trash(card);
+                }
+                game.Player.Hand.Init();
+                for (int i = 0; i < count; i++)
+                {
+                    game.Draw();
+                }
+            }
+            else if (this.power == 5)
+            {
+                foreach (Field field in game.Fields)
+                {
+                    field.Color = Color.GetRandom();
+                }
+            }
+            else if (this.power == 7)
+            {
+                Field field = game.Fields[(int)opt[1]];
+                if (field.IsFixed)
+                {
+                    throw GameException.getCardAlreadyFixedException();
+                }
+                string cardStr = (string)opt[0];
+                CardDeck fieldDeck = field.CardList[(game.Turn + 1) % 2];
+                fieldDeck.Remove(cardStr);
+            }
+            else if (this.power == 9)
+            {
+                game.ExtraTurn = true;
+            }
+            return ret;
         }
 
         /// <summary>
@@ -498,10 +567,10 @@ namespace Lily_Acolasia
         private const int SCORE_SAME_COLOR = 3;
         private const int SCORE_SAME_NUMBER = 3;
 
-        private readonly Color color;
         private readonly int number;
         private readonly CardDeck[] cardList = new CardDeck[PLAYER_NUM];
         private int win = -1;
+        private Color color;
 
         /// <summary>
         /// Card list.
@@ -512,9 +581,21 @@ namespace Lily_Acolasia
         /// </summary>
         public int Winner { get { return this.win; } }
         /// <summary>
+        /// Is the field result fixed? (True: fixed. False: Not fixed).
+        /// </summary>
+        public bool IsFixed { get { return this.win >= 0; } }
+        /// <summary>
         /// Field number.
         /// </summary>
         public int Number { get { return this.number; } }
+        /// <summary>
+        /// Color.
+        /// </summary>
+        public Color Color
+        {
+            get { return this.color; }
+            set { this.color = value; }
+        }
 
         /// <summary>
         /// Constructor.
@@ -523,7 +604,7 @@ namespace Lily_Acolasia
         public Field(int number)
         {
             this.number = number;
-            this.color = Color.List[GameRandom.Next() % Color.List.Length];
+            this.color = Color.GetRandom();
             cardList[0] = new CardDeck(MAX_DISCARD);
             cardList[1] = new CardDeck(MAX_DISCARD);
         }
@@ -720,6 +801,103 @@ namespace Lily_Acolasia
     }
 
     /// <summary>
+    /// Game status class.
+    /// </summary>
+    class GameStatus
+    {
+        /// <summary>
+        /// Action enum.
+        /// </summary>
+        public enum Action
+        {
+            Discard, Trash, Special, Next,
+        }
+        /// <summary>
+        /// Status enum.
+        /// </summary>
+        public enum Status
+        {
+            First, Trashed, WaitSpecialInput, Discarded, End, Error
+        }
+
+        private Status status = Status.First;
+
+        /// <summary>
+        /// Current status.
+        /// </summary>
+        public Status Current {
+            get { return this.status; }
+            set { this.status = value; }
+        }
+
+        /// <summary>
+        /// Initialize the status.
+        /// </summary>
+        public void Init()
+        {
+            this.status = Status.First;
+        }
+
+        /// <summary>
+        /// Transition the status.
+        /// </summary>
+        /// <param name="action">Action.</param>
+        /// <returns>Next status.</returns>
+        public Status Act(Action action)
+        {
+            Status next = Status.Error;
+
+            switch (this.status)
+            {
+                case Status.First:
+                    switch (action)
+                    {
+                        case Action.Trash:
+                            next = Status.WaitSpecialInput;
+                            break;
+                        case Action.Discard:
+                            next = Status.Discarded;
+                            break;
+                    }
+                    break;
+                case Status.WaitSpecialInput:
+                    switch (action)
+                    {
+                        case Action.Special:
+                            next = Status.Trashed;
+                            break;
+                    }
+                    break;
+                case Status.Trashed:
+                    switch (action)
+                    {
+                        case Action.Discard:
+                            next = Status.Discarded;
+                            break;
+                    }
+                    break;
+                case Status.Discarded:
+                    switch (action)
+                    {
+                        case Action.Discard:
+                            next = Status.End;
+                            break;
+                    }
+                    break;
+                case Status.End:
+                    switch (action)
+                    {
+                        case Action.Next:
+                            next = Status.First;
+                            break;
+                    }
+                    break;
+            }
+            return next;
+        }
+    }
+
+    /// <summary>
     /// Card game class.
     /// </summary>
     class CardGame
@@ -727,17 +905,16 @@ namespace Lily_Acolasia
         private const int PLAYER_NUM = 2;
         private const int FIELD_NUM = 5;
         private const int INIT_CARD = 5;
-        private const int DISCARD_NUM = 2;
-        private const int TRASHED_NUM = 1;
 
         private readonly Field[] fields = new Field[FIELD_NUM];
         private readonly Player[] players = new Player[PLAYER_NUM];
-        private readonly Talon talon;
+        private readonly GameStatus status = new GameStatus();
+        private readonly Talon talon = new Talon();
 
-        private int trashed;
-        private int discarded;
         private int turn;
         private int firstTurn;
+        private bool extraTurn;
+        private Card lastTrashed = null;
 
         /// <summary>
         /// Constructor.
@@ -749,7 +926,6 @@ namespace Lily_Acolasia
             this.players[0] = new Player(playerA);
             this.players[1] = new Player(playerB);
 
-            talon = new Talon();
             init();
         }
 
@@ -760,6 +936,7 @@ namespace Lily_Acolasia
         {
             this.turn = GameRandom.Next() % PLAYER_NUM;
             this.firstTurn = this.turn;
+            this.lastTrashed = null;
             for (int i = 0; i < FIELD_NUM; i++)
             {
                 this.fields[i] = new Field(i);
@@ -787,14 +964,17 @@ namespace Lily_Acolasia
                 return;
             }
 
-            if (!this.IsDiscarded)
+            GameStatus.Status nextStatus = this.IsFilled ? GameStatus.Status.First : status.Act(GameStatus.Action.Next);
+            if (GameStatus.Status.Error == nextStatus)
             {
                 throw GameException.getNotTrashedException();
             }
-            this.discarded = 0;
-            this.trashed = 0;
 
-            turn = (turn + 1) % PLAYER_NUM;
+            if (!this.extraTurn)
+            {
+                turn = (turn + 1) % PLAYER_NUM;
+            }
+            this.extraTurn = false;
 
             foreach (Field field in this.fields)
             {
@@ -802,6 +982,7 @@ namespace Lily_Acolasia
             }
             this.Draw();
             this.Draw();
+            this.status.Current = nextStatus;
         }
 
         /// <summary>
@@ -813,6 +994,10 @@ namespace Lily_Acolasia
         /// </summary>
         public Player[] Players { get { return this.players; } }
         /// <summary>
+        /// Current player.
+        /// </summary>
+        public Player Player { get { return this.players[this.turn]; } }
+        /// <summary>
         /// Fileds.
         /// </summary>
         public Field[] Fields { get { return this.fields; } }
@@ -821,13 +1006,21 @@ namespace Lily_Acolasia
         /// </summary>
         public int Turn { get { return this.turn; } }
         /// <summary>
-        /// Discarded flag.
-        /// </summary>
-        public bool IsDiscarded { get { return this.discarded == DISCARD_NUM; } }
-        /// <summary>
         /// Trashed flag.
         /// </summary>
-        public bool IsTrashed { get { return this.trashed == TRASHED_NUM; } }
+        public GameStatus.Status Status { get { return this.status.Current; } }
+        /// <summary>
+        /// Extra turn flg.
+        /// </summary>
+        public bool ExtraTurn { set { this.extraTurn = value; } }
+        /// <summary>
+        /// Last trashed card.
+        /// </summary>
+        public Card LastTrashed { get { return this.lastTrashed; } }
+        /// <summary>
+        /// Is my field filled?
+        /// </summary>
+        public bool IsFilled { get { return fields.Where(f => f.CardList[turn].Count() == 3).Count() == FIELD_NUM;  } }
 
         /// <summary>
         /// Winner.
@@ -900,7 +1093,8 @@ namespace Lily_Acolasia
         /// <returns>Discarded card instance.</returns>
         public Card Discard(int fieldIndex, string cardStr)
         {
-            if (this.IsDiscarded)
+            GameStatus.Status nextStatus = status.Act(GameStatus.Action.Discard);
+            if (GameStatus.Status.Error == nextStatus)
             {
                 throw GameException.getAlreadyDiscardedException();
             }
@@ -912,14 +1106,13 @@ namespace Lily_Acolasia
 
             CardDeck hand = this.players[turn].Hand;
             Card card = hand.Get(cardStr);
-            if (card == null) {
+            if (card == null)
+            {
                 throw GameException.getCardNotFoundException(cardStr);
             }
             this.fields[fieldIndex].Add(this.turn, card);
             hand.Remove(cardStr);
-
-            this.discarded ++;
-            this.trashed = TRASHED_NUM;
+            status.Current = nextStatus;
             return card;
         }
 
@@ -931,7 +1124,8 @@ namespace Lily_Acolasia
         /// <returns>Trashed card instance.</returns>
         public Card Trash(int fieldIndex, string cardStr)
         {
-            if (this.IsTrashed)
+            GameStatus.Status nextStatus = status.Act(GameStatus.Action.Trash);
+            if (GameStatus.Status.Error == nextStatus)
             {
                 throw GameException.getAlreadyTrashedException();
             }
@@ -943,8 +1137,25 @@ namespace Lily_Acolasia
 
             Card card = this.fields[fieldIndex].Remove(this.turn, cardStr);
             this.talon.Trash(card);
-            this.trashed ++;
+            this.lastTrashed = card;
+
+            status.Current = card.HasSpecial ? nextStatus : GameStatus.Status.Trashed;
             return card;
+        }
+
+        /// <summary>
+        /// Fire the special effect of the card.
+        /// </summary>
+        /// <param name="opt">Special effect option.</param>
+        public void Special(params object[] opt)
+        {
+            GameStatus.Status nextStatus = status.Act(GameStatus.Action.Special);
+            if (GameStatus.Status.Error == nextStatus)
+            {
+                throw GameException.getAlreadyTrashedException();
+            }
+            this.lastTrashed.Special(this, opt);
+            status.Current = nextStatus;
         }
 
         /// <summary>
@@ -1099,7 +1310,7 @@ namespace Lily_Acolasia
         /// <param name="round">Game round instance.</param>
         /// <param name="opt">Output options.</param>
         /// <returns>Command.</returns>
-        int CmdStart(GameRound round, object[] opt);
+        Command CmdStart(GameRound round, object[] opt);
         /// <summary>
         /// Called when the command is finished.
         /// </summary>
@@ -1114,10 +1325,20 @@ namespace Lily_Acolasia
     }
 
     /// <summary>
+    /// Command enum.
+    /// </summary>
+    public enum Command
+    {
+        Trash, Discard, Next, Special, Null
+    } 
+    
+    /// <summary>
     /// Game operator class.
     /// </summary>
     class GameOperator
     {
+
+
         private const int ROUND = 3;
         private GameRound round;
         private IGameObserver observer;
@@ -1165,26 +1386,29 @@ namespace Lily_Acolasia
             object[] opt = new object[10];
             while (true)
             {
-                int mode = observer.CmdStart(round, opt);
+                Command mode = observer.CmdStart(round, opt);
                 try
                 {
-                    if (mode < 3)
+                    if (mode == Command.Discard)
                     {
-                        if (mode == 1)
-                        {
-                            string cardStr = (string)opt[0];
-                            int field = (int)opt[1];
-                            game.Discard(field, cardStr);
-                        }
-                        else if (mode == 2)
-                        {
-                            string cardStr = (string)opt[0];
-                            int field = (int)opt[1];
-                            game.Trash(field, cardStr);
-                        }
+                        string cardStr = (string)opt[0];
+                        int field = (int)opt[1];
+                        game.Discard(field, cardStr);
                         observer.CmdEnd(round);
                     }
-                    else if (mode == 3)
+                    else if (mode == Command.Trash)
+                    {
+                        string cardStr = (string)opt[0];
+                        int field = (int)opt[1];
+                        game.Trash(field, cardStr);
+                        observer.CmdEnd(round);
+                    }
+                    else if (mode == Command.Special)
+                    {
+                        game.Special(opt);
+                        observer.CmdEnd(round);
+                    }
+                    else if (mode == Command.Next)
                     {
                         observer.TurnEnd(round);
                         game.nextTurn();
