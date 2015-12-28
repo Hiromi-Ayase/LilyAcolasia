@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Lily_Acolasia
+namespace LilyAcolasia
 {
     /// <summary>
     /// Game exception type class.
     /// </summary>
-    class GameExceptionType
+    public class GameExceptionType
     {
         /// <summary>
         /// Field index out of range.
@@ -72,14 +72,14 @@ namespace Lily_Acolasia
     /// <summary>
     /// Game exception class.
     /// </summary>
-    class GameException : Exception
+    public class GameException : Exception
     {
         private readonly GameExceptionType type;
 
         /// <summary>
         /// Type.
         /// </summary>
-        public string Type { get { return this.type.ToString();  } }
+        public string Type { get { return this.type.ToString(); } }
 
         /// <summary>
         /// Constructor.

@@ -5,12 +5,22 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Lily_Acolasia
+namespace LilyAcolasia
 {
+    public class Constants
+    {
+        public const string DECK_TALON = "Talon";
+        public const string DECK_PLAYER0 = "NorthHand";
+        public const string DECK_PLAYER1 = "SouthHand";
+        public const string DECK_TRASH = "Trash";
+        public const string DECK_NORTH_FIELD = "NorthField";
+        public const string DECK_SOUTH_FIELD = "SouthField";
+    }
+
     /// <summary>
     /// Random class for the Game.
     /// </summary>
-    class GameRandom
+    public class GameRandom
     {
         private static Random rand = new Random();
 
@@ -27,7 +37,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Color class.
     /// </summary>
-    class Color
+    public class Color
     {
         /// <summary>
         /// Red.
@@ -106,7 +116,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Card class.
     /// </summary>
-    class Card : IComparable<Card>
+    public class Card : IComparable<Card>
     {
         private static readonly Regex regex;
         private readonly int power;
@@ -178,16 +188,12 @@ namespace Lily_Acolasia
                 }
                 string cardStr = (string)opt[0];
                 CardDeck fieldDeck = field.CardList[game.Turn];
-                fieldDeck.Remove(cardStr);
+                fieldDeck.Move(cardStr, game.Talon.Trash);
             }
             else if (this.power == 3)
             {
                 int count = game.Player.Hand.Count();
-                foreach (Card card in game.Player.Hand)
-                {
-                    game.Talon.Trash(card);
-                }
-                game.Player.Hand.Init();
+                game.Player.Hand.MoveAll(game.Talon.Trash);
                 for (int i = 0; i < count; i++)
                 {
                     game.Draw();
@@ -209,7 +215,7 @@ namespace Lily_Acolasia
                 }
                 string cardStr = (string)opt[0];
                 CardDeck fieldDeck = field.CardList[(game.Turn + 1) % 2];
-                fieldDeck.Remove(cardStr);
+                fieldDeck.Move(cardStr, game.Talon.Trash);
             }
             else if (this.power == 9)
             {
@@ -264,7 +270,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Player class.
     /// </summary>
-    class Player
+    public class Player
     {
         private readonly CardDeck hand;
         private readonly String name;
@@ -282,27 +288,10 @@ namespace Lily_Acolasia
         /// Constructor.
         /// </summary>
         /// <param name="name">Player's name.</param>
-        public Player(string name)
+        public Player(string name, int turn)
         {
             this.name = name;
-            this.hand = new CardDeck();
-        }
-
-        /// <summary>
-        /// Initialize the hand.
-        /// </summary>
-        public void Init()
-        {
-            this.hand.Init();
-        }
-
-        /// <summary>
-        /// Add the card to the hand.
-        /// </summary>
-        /// <param name="card">The card to be added.</param>
-        public void Add(Card card)
-        {
-            this.hand.Add(card);
+            this.hand = new CardDeck(turn == 0 ? Constants.DECK_PLAYER0 : Constants.DECK_PLAYER1);
         }
 
         /// <summary>
@@ -318,34 +307,53 @@ namespace Lily_Acolasia
     /// <summary>
     /// Card deck class.
     /// </summary>
-    class CardDeck : IEnumerable<Card>
+    public class CardDeck : IEnumerable<Card>
     {
+        public delegate void CardMoveHandler(CardDeck from, CardDeck to, Card card);
+        private static CardMoveHandler handler = (from, to, Card) => { };
+        private static Dictionary<string, CardDeck> deckList = new Dictionary<string, CardDeck>();
+
         private readonly int size;
+        private readonly string name;
         private List<Card> list = new List<Card>();
+
+        /// <summary>
+        /// Constructor by the default card.
+        /// </summary>
+        /// <param name="size">Size.</param>
+        public CardDeck(List<Card> list, string name)
+        {
+            this.size = list.Count;
+            this.list = list;
+            this.name = name;
+            CardDeck.List[name] = this;
+        }
 
         /// <summary>
         /// Constructor.
         /// </summary>
         /// <param name="size">Size.</param>
-        public CardDeck(int size)
+        /// <param name="name">Name.</param>
+        public CardDeck(int size, string name)
         {
             this.size = size;
+            this.name = name;
+
+            if (deckList.ContainsKey(name))
+            {
+                throw new Exception("Illegal card deck instantiation.");
+            }
+            deckList.Add(name, this);
         }
 
         /// <summary>
         /// Constructor for infinite size deck.
         /// </summary>
-        public CardDeck()
+        /// <param name="name">Name.</param>
+        public CardDeck(string name)
         {
             this.size = -1;
-        }
-
-        /// <summary>
-        /// Initialize the deck.
-        /// </summary>
-        public void Init()
-        {
-            this.list.Clear();
+            this.name = name;
         }
 
         /// <summary>
@@ -359,21 +367,70 @@ namespace Lily_Acolasia
         }
 
         /// <summary>
-        /// Draw the first card.
+        /// Draw a card from this talon and send it to another deck.
         /// </summary>
-        /// <returns></returns>
-        public Card Draw()
+        /// <param name="to">The deck to send the card.</param>
+        /// <returns>Drawn card.</returns>
+        public Card Draw(CardDeck to)
         {
             if (this.list.Count() == 0)
             {
                 throw GameException.getNoCardException();
             }
             Card card = this.list.First();
+            CardDeck.handler(this, to, card);
+            this.Move(card.Name, to);
+            return card;
+        }
+
+        /// <summary>
+        /// Move the specified card to the another deck.
+        /// </summary>
+        /// <param name="cardStr">card string.</param>
+        /// <param name="to">Target deck.</param>
+        /// <returns>Card instance.</returns>
+        public Card Move(string cardStr, CardDeck to)
+        {
+            if (to.size >= 0 && to.list.Count() == to.size)
+            {
+                throw GameException.getCardTooManyException();
+            }
+
+            Card card = this.Get(cardStr);
+
+            if (card == null)
+            {
+                throw GameException.getNoCardException();
+            }
+
             if (!this.list.Remove(card))
             {
                 throw new Exception();
             }
+            CardDeck.handler(this, to, card);
+            to.list.Add(card);
             return card;
+        }
+
+        /// <summary>
+        /// Move all card to the deck.
+        /// </summary>
+        /// <param name="to">Target deck.</param>
+        public void MoveAll(CardDeck to)
+        {
+            if (to.size >= 0 && to.list.Count() > to.size - this.list.Count)
+            {
+                throw GameException.getCardTooManyException();
+            }
+            List<string> list = new List<string>();
+            foreach (Card card in this.list)
+            {
+                list.Add(card.Name);
+            }
+            foreach (string name in list)
+            {
+                this.Move(name, to);
+            }
         }
 
         /// <summary>
@@ -391,47 +448,6 @@ namespace Lily_Acolasia
                 }
             }
             return null;
-        }
-
-        /// <summary>
-        /// Remove the card by string representation.
-        /// </summary>
-        /// <param name="cardStr">String representation.</param>
-        /// <returns>Removed card instance.</returns>
-        public Card Remove(string cardStr)
-        {
-            Card card = this.Get(cardStr);
-            if (card != null)
-            {
-                this.list.Remove(card);
-            }
-            else
-            {
-                throw GameException.getCardNotFoundException(cardStr);
-            }
-            return card;
-        }
-
-        /// <summary>
-        /// Add the card to the deck.
-        /// </summary>
-        /// <param name="card">Card instance.</param>
-        public void Add(Card card)
-        {
-            if (size >= 0 && list.Count() == size)
-            {
-                throw GameException.getCardTooManyException();
-            }
-            this.list.Add(card);
-        }
-
-        /// <summary>
-        /// Add another deck's cards.
-        /// </summary>
-        /// <param name="deck">Other deck.</param>
-        public void AddRange(CardDeck deck)
-        {
-            this.list.AddRange(deck.list);
         }
 
         /// <summary>
@@ -483,58 +499,55 @@ namespace Lily_Acolasia
         {
             return this.GetEnumerator();
         }
+
+        /// <summary>
+        /// Set the handler.
+        /// </summary>
+        public static CardMoveHandler Handler { set { CardDeck.handler = value; } }
+
+        /// <summary>
+        /// Get the all decks.
+        /// </summary>
+        public static Dictionary<string, CardDeck> List { get { return CardDeck.deckList; } }
+
+        /// <summary>
+        /// Get the name.
+        /// </summary>
+        public string Name { get { return this.name; } }
     }
 
     /// <summary>
     /// Talon class.
     /// </summary>
-    class Talon
+    public class Talon
     {
-        private CardDeck deck = new CardDeck();
-        private CardDeck trash = new CardDeck();
+        private CardDeck deck = null;
+        private CardDeck trash = new CardDeck(Constants.DECK_TRASH);
+
+        public CardDeck Deck { get { return this.deck; } }
+        public CardDeck Trash { get { return this.trash; } }
+
+        public Talon()
+        {
+            List<Card> list = new List<Card>();
+            foreach (Color color in Color.List)
+            {
+                for (int i = 1; i <= 9; i++)
+                {
+                    list.Add(new Card(i, color));
+                }
+            }
+            this.deck = new CardDeck(list, Constants.DECK_TALON);
+            deck.Shuffle();
+        }
 
         /// <summary>
         /// Initialize the talon.
         /// </summary>
         public void Init()
         {
-            deck.Init();
-            foreach (Color color in Color.List)
-            {
-                for (int i = 1; i <= 9; i++)
-                {
-                    deck.Add(new Card(i, color));
-                }
-            }
+            trash.MoveAll(deck);
             deck.Shuffle();
-        }
-
-        /// <summary>
-        /// Refresh the talon.
-        /// </summary>
-        public void Refresh()
-        {
-            deck.AddRange(trash);
-            trash.Init();
-            deck.Shuffle();
-        }
-
-        /// <summary>
-        /// Draw the card from this talon.
-        /// </summary>
-        /// <returns>Card instance.</returns>
-        public Card Draw()
-        {
-            return deck.Draw();
-        }
-
-        /// <summary>
-        /// Trash the card.
-        /// </summary>
-        /// <param name="card">Trashed card.</param>
-        public void Trash(Card card)
-        {
-            trash.Add(card);
         }
 
         /// <summary>
@@ -558,7 +571,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Field class.
     /// </summary>
-    class Field
+    public class Field
     {
         private const int MAX_DISCARD = 3;
         private const int PLAYER_NUM = 2;
@@ -605,8 +618,8 @@ namespace Lily_Acolasia
         {
             this.number = number;
             this.color = Color.GetRandom();
-            cardList[0] = new CardDeck(MAX_DISCARD);
-            cardList[1] = new CardDeck(MAX_DISCARD);
+            cardList[0] = new CardDeck(MAX_DISCARD, Constants.DECK_NORTH_FIELD + number);
+            cardList[1] = new CardDeck(MAX_DISCARD, Constants.DECK_SOUTH_FIELD + number);
         }
 
         /// <summary>
@@ -617,38 +630,6 @@ namespace Lily_Acolasia
         public CardDeck GetCardList(int turn)
         {
             return this.CardList[turn];
-        }
-
-        /// <summary>
-        /// Remove the card from the field.
-        /// </summary>
-        /// <param name="turn">Turn number.</param>
-        /// <param name="cardStr">String representation of the card.</param>
-        /// <returns>Card instance.</returns>
-        public Card Remove(int turn, string cardStr)
-        {
-            if (this.win >= 0)
-            {
-                throw GameException.getCardAlreadyFixedException();
-            }
-            return cardList[turn].Remove(cardStr);
-        }
-
-        /// <summary>
-        /// Add the card to the field.
-        /// </summary>
-        /// <param name="turn">Turn number.</param>
-        /// <param name="cardStr">String representation of the card.</param>
-        public void Add(int turn, Card card)
-        {
-            if (this.win >= 0)
-            {
-                throw GameException.getCardAlreadyFixedException();
-            }
-            else
-            {
-                cardList[turn].Add(card);
-            }
         }
 
         /// <summary>
@@ -803,7 +784,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Game status class.
     /// </summary>
-    class GameStatus
+    public class GameStatus
     {
         /// <summary>
         /// Action enum.
@@ -825,7 +806,8 @@ namespace Lily_Acolasia
         /// <summary>
         /// Current status.
         /// </summary>
-        public Status Current {
+        public Status Current
+        {
             get { return this.status; }
             set { this.status = value; }
         }
@@ -900,7 +882,7 @@ namespace Lily_Acolasia
     /// <summary>
     /// Card game class.
     /// </summary>
-    class CardGame
+    public class CardGame
     {
         private const int PLAYER_NUM = 2;
         private const int FIELD_NUM = 5;
@@ -912,7 +894,6 @@ namespace Lily_Acolasia
         private readonly Talon talon = new Talon();
 
         private int turn;
-        private int firstTurn;
         private bool extraTurn;
         private Card lastTrashed = null;
 
@@ -923,10 +904,12 @@ namespace Lily_Acolasia
         /// <param name="playerB">Player2 name</param>
         public CardGame(string playerA, string playerB)
         {
-            this.players[0] = new Player(playerA);
-            this.players[1] = new Player(playerB);
-
-            init();
+            this.players[0] = new Player(playerA, 0);
+            this.players[1] = new Player(playerB, 1);
+            for (int i = 0; i < FIELD_NUM; i++)
+            {
+                this.fields[i] = new Field(i);
+            }
         }
 
         /// <summary>
@@ -935,22 +918,19 @@ namespace Lily_Acolasia
         public void init()
         {
             this.turn = GameRandom.Next() % PLAYER_NUM;
-            this.firstTurn = this.turn;
             this.lastTrashed = null;
             for (int i = 0; i < FIELD_NUM; i++)
             {
-                this.fields[i] = new Field(i);
+                this.fields[i].CardList[0].MoveAll(this.talon.Trash);
+                this.fields[i].CardList[1].MoveAll(this.talon.Trash);
             }
+            this.players[0].Hand.MoveAll(this.talon.Trash);
+            this.players[1].Hand.MoveAll(this.talon.Trash);
             talon.Init();
-            this.players[0].Init();
-            this.players[1].Init();
-
             for (int i = 0; i < INIT_CARD; i++)
             {
-                Card card1 = this.talon.Draw();
-                Card card2 = this.talon.Draw();
-                this.players[0].Add(card1);
-                this.players[1].Add(card2);
+                this.talon.Deck.Draw(this.players[0].Hand);
+                this.talon.Deck.Draw(this.players[1].Hand);
             }
         }
 
@@ -1020,7 +1000,7 @@ namespace Lily_Acolasia
         /// <summary>
         /// Is my field filled?
         /// </summary>
-        public bool IsFilled { get { return fields.Where(f => f.CardList[turn].Count() == 3).Count() == FIELD_NUM;  } }
+        public bool IsFilled { get { return fields.Where(f => f.CardList[turn].Count() == 3).Count() == FIELD_NUM; } }
 
         /// <summary>
         /// Winner.
@@ -1056,7 +1036,7 @@ namespace Lily_Acolasia
                     }
                 }
 
-                if (fixedField == FIELD_NUM || this.talon.IsEmpty && Math.Max(this.players[0].Hand.Count(), this.players[1].Hand.Count()) == 0)
+                if (fixedField == FIELD_NUM || this.talon.IsEmpty || Math.Max(this.players[0].Hand.Count(), this.players[1].Hand.Count()) == 0)
                 {
                     if (evals[0] == evals[1])
                     {
@@ -1079,10 +1059,9 @@ namespace Lily_Acolasia
         {
             if (this.talon.IsEmpty)
             {
-                this.talon.Refresh();
+                return;
             }
-            Card card = this.talon.Draw();
-            this.players[this.turn].Add(card);
+            this.talon.Deck.Draw(this.players[this.turn].Hand);
         }
 
         /// <summary>
@@ -1110,9 +1089,16 @@ namespace Lily_Acolasia
             {
                 throw GameException.getCardNotFoundException(cardStr);
             }
-            this.fields[fieldIndex].Add(this.turn, card);
-            hand.Remove(cardStr);
-            status.Current = nextStatus;
+            hand.Move(cardStr, this.fields[fieldIndex].CardList[turn]);
+
+            if (this.players[turn].Hand.Count() == 0)
+            {
+                status.Current = GameStatus.Status.End;
+            }
+            else
+            {
+                status.Current = nextStatus;
+            }
             return card;
         }
 
@@ -1133,10 +1119,13 @@ namespace Lily_Acolasia
             {
                 throw GameException.getFieldIndexException();
             }
+            if (this.fields[fieldIndex].IsFixed)
+            {
+                throw GameException.getCardAlreadyFixedException();
+            }
 
 
-            Card card = this.fields[fieldIndex].Remove(this.turn, cardStr);
-            this.talon.Trash(card);
+            Card card = this.fields[fieldIndex].CardList[this.turn].Move(cardStr, this.talon.Trash);
             this.lastTrashed = card;
 
             status.Current = card.HasSpecial ? nextStatus : GameStatus.Status.Trashed;
@@ -1193,9 +1182,11 @@ namespace Lily_Acolasia
     /// <summary>
     /// Game round class.
     /// </summary>
-    class GameRound
+    public class GameRound
     {
-        private readonly CardGame[] game;
+        private const int MAX = 3;
+
+        private readonly CardGame game;
         private int point1 = 0;
         private int point2 = 0;
         private int round = 0;
@@ -1208,11 +1199,7 @@ namespace Lily_Acolasia
         /// <param name="name2">Player2 name.</param>
         public GameRound(int n, string name1, string name2)
         {
-            this.game = new CardGame[n];
-            for (int i = 0; i < n; i++)
-            {
-                this.game[i] = new CardGame(name1, name2);
-            }
+            this.game = new CardGame(name1, name2);
         }
 
         /// <summary>
@@ -1230,7 +1217,16 @@ namespace Lily_Acolasia
         /// <summary>
         /// Current game.
         /// </summary>
-        public CardGame Current { get { return this.game[round]; } }
+        public CardGame Current { get { return this.game; } }
+
+        /// <summary>
+        /// Start the game.
+        /// </summary>
+        public void NextRound()
+        {
+            this.round++;
+            this.Current.init();
+        }
 
         /// <summary>
         /// Return if the round has a next turn or not.
@@ -1238,7 +1234,6 @@ namespace Lily_Acolasia
         /// <returns>True: yes  False: no</returns>
         public bool HasNext()
         {
-            int winner = this.Current.Winner;
             if (this.Current.Winner >= 0)
             {
                 return false;
@@ -1253,7 +1248,7 @@ namespace Lily_Acolasia
         /// Return if a next round exists or not.
         /// </summary>
         /// <returns>True: yes  False: all games are finished.</returns>
-        public bool NextRound()
+        public bool HasNextRound()
         {
             int winner = this.Current.Winner;
             if (winner == 1)
@@ -1264,15 +1259,14 @@ namespace Lily_Acolasia
             {
                 this.point1++;
             }
-            this.round++;
-            return this.round < game.Length;
+            return this.round < MAX;
         }
     }
 
     /// <summary>
     /// Game observer interface.
     /// </summary>
-    interface IGameObserver
+    public interface IGameObserver
     {
         /// <summary>
         /// Called when the game is started.
@@ -1305,13 +1299,6 @@ namespace Lily_Acolasia
         /// <param name="round">Game round instance.</param>
         void TurnEnd(GameRound round);
         /// <summary>
-        /// Called when the command input is started.
-        /// </summary>
-        /// <param name="round">Game round instance.</param>
-        /// <param name="opt">Output options.</param>
-        /// <returns>Command.</returns>
-        Command CmdStart(GameRound round, object[] opt);
-        /// <summary>
         /// Called when the command is finished.
         /// </summary>
         /// <param name="round">Game round instance.</param>
@@ -1330,19 +1317,40 @@ namespace Lily_Acolasia
     public enum Command
     {
         Trash, Discard, Next, Special, Null
-    } 
-    
+    }
+
+    /// <summary>
+    /// Game input class.
+    /// </summary>
+    public class GameInput
+    {
+        private object[] opt;
+        private Command command = Command.Null;
+
+        public void input(Command command, params object[] opt)
+        {
+            this.opt = opt;
+            this.command = command;
+        }
+
+        /// <summary>
+        /// Options.
+        /// </summary>
+        public object[] Options { get { return this.opt; } }
+        /// <summary>
+        /// Command.
+        /// </summary>
+        public Command Command { get { return this.command; } }
+    }
+
     /// <summary>
     /// Game operator class.
     /// </summary>
-    class GameOperator
+    public class GameOperator
     {
-
-
         private const int ROUND = 3;
         private GameRound round;
         private IGameObserver observer;
-
         /// <summary>
         /// Constructor.
         /// </summary>
@@ -1356,21 +1364,30 @@ namespace Lily_Acolasia
         }
 
         /// <summary>
+        /// Get the current 
+        /// </summary>
+        public GameRound Round { get { return this.round; } }
+
+        /// <summary>
         /// Start the game.
         /// </summary>
-        public void Start()
+        public IEnumerable<GameInput> Iterator()
         {
             observer.GameStart(round);
             while (true)
             {
                 observer.RoundStart(round);
+                round.NextRound();
                 while (round.HasNext())
                 {
-                    Turn();
+                    foreach (GameInput gi in Turn())
+                    {
+                        yield return gi;
+                    }
                 }
                 observer.RoundEnd(round);
 
-                if (!round.NextRound())
+                if (!round.HasNextRound())
                 {
                     break;
                 }
@@ -1378,17 +1395,19 @@ namespace Lily_Acolasia
             observer.GameEnd(round);
         }
 
-        private void Turn()
+        private IEnumerable<GameInput> Turn()
         {
             CardGame game = round.Current;
             observer.TurnStart(round);
 
-            object[] opt = new object[10];
             while (true)
             {
-                Command mode = observer.CmdStart(round, opt);
+                GameInput gi = new GameInput();
+                yield return gi;
                 try
                 {
+                    Command mode = gi.Command;
+                    object[] opt = gi.Options;
                     if (mode == Command.Discard)
                     {
                         string cardStr = (string)opt[0];

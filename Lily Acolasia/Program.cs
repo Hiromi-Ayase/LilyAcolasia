@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Lily_Acolasia
+namespace LilyAcolasia
 {
     class Program
     {
@@ -12,82 +13,22 @@ namespace Lily_Acolasia
         {
             IGameObserver observer = new ConsoleGameObserver();
             GameOperator game = new GameOperator(observer, "PlayerA", "PlayerB");
-            game.Start();
-        }
-    }
+            object[] opt = new object[10];
 
-    /// <summary>
-    /// Console game observer implementation.
-    /// </summary>
-    class ConsoleGameObserver : IGameObserver
-    {
-        private static readonly Dictionary<string, string> ErrorMessages = new Dictionary<string, string>() 
-        {
-            {GameExceptionType.FIELD_INDEX_EXCEPTION, "The field index is out of range."},
-            {GameExceptionType.CARD_STRING_EXCEPTION, "The card representation string is invalid."},
-            {GameExceptionType.ALREADY_DISCARDED_EXCEPTION, "You have already discarded a card."},
-            {GameExceptionType.NOT_DISCARDED_EXCEPTION, "You have not discarded any card yet."},
-            {GameExceptionType.ALREADY_TRASHED_EXCEPTION, "You have already trashed a card."},
-            {GameExceptionType.CARD_ALREADY_FIXED_EXCEPTION, "The card list in the field is already fixed."},
-            {GameExceptionType.CARD_NOT_FOUND_EXCEPTION, "The card is not found."},
-            {GameExceptionType.CARD_TOO_MANY_EXCEPTION, "The number of cards is too many."},
-            {GameExceptionType.NO_CARD_EXCEPTION, "No such card exists."},
-        };
-
-        public void RoundStart(GameRound round)
-        {
-            Console.WriteLine("Round" + round.Round + " start!");
-            Console.WriteLine();
-        }
-
-        public void GameStart(GameRound round)
-        {
-            Console.WriteLine("Game start!");
-        }
-
-        public void GameEnd(GameRound round)
-        {
-            Console.WriteLine("Result: " + round.Point1 + ":" + round.Point2);
-            Console.WriteLine("Press any key.");
-            Console.ReadLine();
-
-        }
-
-        public void RoundEnd(GameRound round)
-        {
-            Console.WriteLine(round.Current.ToString());
-            int winner = round.Current.Winner;
-            if (winner == 2)
-            {
-                Console.WriteLine("Round" + round.Round + " Even.");
+            foreach (GameInput gi in game.Iterator()) {
+                
+                Command command = getNext(game.Round, opt);
+                gi.input(command, opt);
             }
-            else
-            {
-                Console.WriteLine("Round" + round.Round + " " + round.Current.Players[winner].Name + " won!");
-            }
-            Console.WriteLine("Press any key.");
-            Console.ReadLine();
         }
 
-        public void TurnStart(GameRound round)
-        {
-            Console.WriteLine("============ Turn Start ============");
-            Console.WriteLine();
-        }
-
-        public void TurnEnd(GameRound round)
-        {
-            Console.WriteLine("============ Turn End ============");
-            Console.WriteLine();
-        }
-
-
-        public Command CmdStart(GameRound round, object[] opt)
+        private static Command getNext(GameRound round, object[] opt)
         {
             CardGame game = round.Current;
             Console.WriteLine(game.ToString());
             Console.WriteLine("Status:" + game.Status.ToString());
-            if (game.Status == GameStatus.Status.WaitSpecialInput) {
+            if (game.Status == GameStatus.Status.WaitSpecialInput)
+            {
                 int effectType = (game.LastTrashed.Power - 1) / 2;
                 string[] messages = { "Trush my arbitrary card.", "Refresh my hand.", "Change the field.", "Trush enemy's arbitrary card.", "Get an extra turn." };
                 Console.WriteLine("Card effect: " + messages[effectType]);
@@ -164,11 +105,7 @@ namespace Lily_Acolasia
             }
         }
 
-        public void CmdEnd(GameRound round)
-        {
-        }
-
-        private string AI(CardGame game)
+        private static string AI(CardGame game)
         {
             string line = "";
             if (game.Status == GameStatus.Status.End || game.IsFilled)
@@ -210,7 +147,76 @@ namespace Lily_Acolasia
             Console.WriteLine("Auto: " + line);
             return line;
         }
+    }
 
+    /// <summary>
+    /// Console game observer implementation.
+    /// </summary>
+    class ConsoleGameObserver : IGameObserver
+    {
+        private static readonly Dictionary<string, string> ErrorMessages = new Dictionary<string, string>() 
+        {
+            {GameExceptionType.FIELD_INDEX_EXCEPTION, "The field index is out of range."},
+            {GameExceptionType.CARD_STRING_EXCEPTION, "The card representation string is invalid."},
+            {GameExceptionType.ALREADY_DISCARDED_EXCEPTION, "You have already discarded a card."},
+            {GameExceptionType.NOT_DISCARDED_EXCEPTION, "You have not discarded any card yet."},
+            {GameExceptionType.ALREADY_TRASHED_EXCEPTION, "You have already trashed a card."},
+            {GameExceptionType.CARD_ALREADY_FIXED_EXCEPTION, "The card list in the field is already fixed."},
+            {GameExceptionType.CARD_NOT_FOUND_EXCEPTION, "The card is not found."},
+            {GameExceptionType.CARD_TOO_MANY_EXCEPTION, "The number of cards is too many."},
+            {GameExceptionType.NO_CARD_EXCEPTION, "No such card exists."},
+        };
+
+        public void RoundStart(GameRound round)
+        {
+            Console.WriteLine("Round" + round.Round + " start!");
+            Console.WriteLine();
+        }
+
+        public void GameStart(GameRound round)
+        {
+            Console.WriteLine("Game start!");
+        }
+
+        public void GameEnd(GameRound round)
+        {
+            Console.WriteLine("Result: " + round.Point1 + ":" + round.Point2);
+            Console.WriteLine("Press any key.");
+            Console.ReadLine();
+
+        }
+
+        public void RoundEnd(GameRound round)
+        {
+            Console.WriteLine(round.Current.ToString());
+            int winner = round.Current.Winner;
+            if (winner == 2)
+            {
+                Console.WriteLine("Round" + round.Round + " Even.");
+            }
+            else
+            {
+                Console.WriteLine("Round" + round.Round + " " + round.Current.Players[winner].Name + " won!");
+            }
+            Console.WriteLine("Press any key.");
+            Console.ReadLine();
+        }
+
+        public void TurnStart(GameRound round)
+        {
+            Console.WriteLine("============ Turn Start ============");
+            Console.WriteLine();
+        }
+
+        public void TurnEnd(GameRound round)
+        {
+            Console.WriteLine("============ Turn End ============");
+            Console.WriteLine();
+        }
+
+        public void CmdEnd(GameRound round)
+        {
+        }
 
         public void CmdError(GameRound round, GameException ex)
         {
